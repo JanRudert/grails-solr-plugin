@@ -25,12 +25,10 @@ package org.grails.solr
 
 import org.apache.solr.client.solrj.impl.CommonsHttpSolrServer
 import org.apache.solr.client.solrj.impl.StreamingUpdateSolrServer
-import org.apache.solr.client.solrj.impl.XMLResponseParser
+
 import org.codehaus.groovy.grails.commons.ConfigurationHolder
 import org.apache.solr.client.solrj.SolrQuery
 import org.apache.solr.client.solrj.response.QueryResponse
-import org.grails.solr.*
-
 
 class SolrService {
 
@@ -42,15 +40,79 @@ class SolrService {
   * {@link http://lucene.apache.org/solr/api/org/apache/solr/client/solrj/SolrServer.html}
   */
   def getServer() {
-    def url =  (grailsApplication.config.solr?.url) ? grailsApplication.config.solr.url : "http://localhost:8983/solr"
-    def server = new CommonsHttpSolrServer( url )
+    return createServer(defaultServerUrl)
+  }
+
+  private def createServer(String url) {
+    def server = new CommonsHttpSolrServer(url)
     //server.setParser(new XMLResponseParser())
     return server
   }
-  
+
+  /**
+   * Returns a SolrServer for the given url
+   */
+  def getServer(String url) {
+    return createServer(url)
+  }
+
+  /**
+   * Returns a server object for the given artefact type. Looks up the configuration.
+   */
+  def getServer(Class artefactType) {
+    def rtn
+    def url = getCoreUrl(artefactType)
+    if (url) {
+      rtn = getServer(url)
+    } else {
+      rtn = server
+    }
+    return rtn
+  }
+
+  /**
+   * Returns the configured url for the core associated with the given artifact type,
+   * null if not configured
+   *
+   * example configuration:
+   *
+    //for solr plugin: non-domain classes that should be indexed as well
+    solr.additional=[ExampleCarDocument, ExampleCustomerDocument]
+
+    //urls for solr server(different cores):
+    solr {
+      cores {
+        vehicle {
+          artefact = ExampleCarDocument
+          url = "http://localhost:8983/solr/vehicle"
+        }
+        customer {
+          artefact = ExampleCustomerDocument
+          url = "http://localhost:8983/solr/customer"
+        }
+      }
+    }
+   *
+   */
+  String getCoreUrl(Class artefactType) {
+    def url
+    def coreConfigs = ConfigurationHolder.config.solr.cores
+    if (coreConfigs) {
+      url = coreConfigs.find {key, configObject -> configObject["artefact"] == artefactType}?.value?.url
+    }
+    return url
+  }
+
+  /**
+   * Returns the server url if configured, otherwise "http://localhost:8983/solr". Does not take core configurations
+   * into account.
+   */
+  String getDefaultServerUrl() {
+    return (grailsApplication.config.solr?.url) ? grailsApplication.config.solr.url : "http://localhost:8983/solr"
+  }
+
   def getStreamingUpdateServer(queueSize=20, numThreads=3) {
-    def url =  (grailsApplication.config.solr?.url) ? grailsApplication.config.solr.url : "http://localhost:8983/solr"
-    def server = new StreamingUpdateSolrServer( url, queueSize, numThreads)
+    def server = new StreamingUpdateSolrServer( defaultServerUrl, queueSize, numThreads)
     return server     
   }
 
@@ -63,8 +125,29 @@ class SolrService {
   def search(String query) {
     search( new SolrQuery( query ) )
   }
-  
+
+
   /**
+  * Executes a Solr query given a string formatted query and an url.
+  */
+  def search(String query, String url)
+  {
+    search( new SolrQuery( query), url)
+  }
+
+   /**
+  * Given SolrQuery object, execute Solr query.
+  * @author Manuel Kasiske
+  * @param solrQuery - SolrQuery object representating the query {@link http://lucene.apache.org/solr/api/org/apache/solr/client/solrj/SolrQuery.html}
+  * @return Map with 'resultList' - list of Maps representing results and 'queryResponse' - Solrj query result
+  */
+  def search(SolrQuery solrQuery, String url) {
+    QueryResponse rsp = getServer(url).query( solrQuery );
+    def results = collectResults(rsp)
+    return new SearchResults(resultList: results, queryResponse: rsp);
+  }
+
+ /**
   * Given SolrQuery object, execute Solr query
   *
   * @param solrQuery - SolrQuery object representating the query {@link http://lucene.apache.org/solr/api/org/apache/solr/client/solrj/SolrQuery.html}
@@ -72,14 +155,22 @@ class SolrService {
   */
   def search(SolrQuery solrQuery) {
     QueryResponse rsp = getServer().query( solrQuery );
-    
+    def results = collectResults(rsp)
+    return new SearchResults(resultList: results, queryResponse: rsp);
+  }
 
-    def results = []
-    rsp.getResults().each { doc ->
-      def map = [:]     
+  /**
+   * Collects the results of the query-response and creates a map.
+   * @author Manuel Kasiske
+   * @param QueryRepsponse: the response of the solr-query.
+   */
+  def collectResults(org.apache.solr.client.solrj.response.QueryResponse rsp) {
+     def results = []
+     rsp.getResults().each { doc ->
+      def map = [:]
       doc.getFieldNames().each { it ->
-                
-        // add both the stripped field name and the actual solr field name to 
+
+        // add both the stripped field name and the actual solr field name to
         // the result map... little redundant but greater flexibilty in retrieving
         // results
         def strippedFieldName = SolrUtil.stripFieldName(it)
@@ -88,17 +179,17 @@ class SolrService {
           map."${it}" = doc.getFieldValue(it)
       }
       map.id = SolrUtil.parseSolrId(doc.getFieldValue("id"))?.id
-      
+
       // Add the SolrDocument to the map as well
       // http://lucene.apache.org/solr/api/org/apache/solr/common/SolrDocument.html
       map.solrDocument = doc
-    
+
       results << map
     }
-     
-    return new SearchResults(resultList: results, queryResponse: rsp); 
-      
+    results
   }
+
+
     
   /**
   * Constitute SolrQuery for a haversine based spatial search. This method returns 

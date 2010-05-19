@@ -23,7 +23,7 @@
 
 import org.codehaus.groovy.grails.commons.metaclass.*
 import org.codehaus.groovy.grails.commons.GrailsApplication
-import org.apachedomainDesc.solr.client.solrj.impl.*
+import org.apache.solr.client.solrj.impl.*
 import org.apache.solr.common.*
 import org.apache.solr.client.solrj.response.QueryResponse
 import org.apache.solr.client.solrj.SolrQuery
@@ -35,6 +35,8 @@ import org.codehaus.groovy.grails.commons.GrailsClassUtils
 import org.grails.solr.SolrIndexListener
 import org.grails.solr.Solr
 import org.grails.solr.SolrUtil
+import org.springframework.beans.BeanUtils
+import java.beans.PropertyDescriptor
 
 class SolrGrailsPlugin {
     // the plugin version
@@ -47,9 +49,11 @@ class SolrGrailsPlugin {
     def pluginExcludes = [
       "grails-app/views/error.gsp",
       "grails-app/domain/**",
-      "grails-app/Config.groovy",
+      "grails-app/conf/Config.groovy",
+      "grails-app/conf/solr/**",
       "grials-app/UrlMappings.groovy",
-      "grails-app/Datasource.groovy"
+      "grails-app/Datasource.groovy",
+      "src/groovy/org/grails/solr/test/**"
     ]
 
   //static loadAfter = ['hibernate']
@@ -94,120 +98,128 @@ open source search server through the SolrJ library.
 
     def doWithDynamicMethods = { ctx ->
 
-      application.domainClasses.each { dc ->
-  
-        if(GrailsClassUtils.getStaticPropertyValue(dc.clazz, "enableSolrSearch")) {       
-          def domainDesc = application.getArtefact(DomainClassArtefactHandler.TYPE, dc.clazz.name)          
-        
-          // define indexSolr() method for all domain classes
-          dc.metaClass.indexSolr << { server = null ->
-            def delegateDomainOjbect = delegate
-            def solrService = ctx.getBean("solrService");
-            if(!server)
-              server = solrService.getServer()
-          
+        def inputClasses = determineInputClasses(application)
 
-            // TODO - is there a bette way to ignore built in parameters?
-          
-            // create a new solr document
-            def doc = new SolrInputDocument();
-          
-            indexDomain(application, delegateDomainOjbect, doc)
-          
-            server.add(doc)
-            server.commit()
+        inputClasses.each {inputClazz ->
 
-          }
-        
-          // add deleteSolr method to domain classes
-          dc.metaClass.deleteSolr << { ->
-            def solrService = ctx.getBean("solrService");
-            def server = solrService.getServer()
-            server.deleteByQuery( "id:${delegate.class.name}-${delegate.id}");
-            server.commit()
-          }   
-        
-          // add deleteSolr method to domain classes
-          /*
-          dc.metaClass.addSolr << { ->
-            def solrService = ctx.getBean("solrService");
-            def server = solrService.getServer
-          
-            server.addBean( delegate );
-            server.commit()
-          }
-          */        
+            // define indexSolr() method for all domain classes
+            inputClazz.metaClass.indexSolr << {server = null ->
+                def solrService = ctx.getBean("solrService");
+                if (!server)
+                    server = solrService.getServer(delegate.class)
 
-          // add solrId method to domain classes
-          dc.metaClass.solrId << { ->
-            def solrService = ctx.getBean("solrService");
-            SolrUtil.getSolrId(delegate)
-          }           
+                // TODO - is there a bette way to ignore built in parameters?
 
-          dc.metaClass.'static'.solrFieldName << { name ->
-            def delegateDomainOjbect = delegate
-            def prefix = ""
-            def solrFieldName
-            def clazz = (delegate.class.name == 'java.lang.Class') ? delegate : delegate.class
-            def prop = clazz.declaredFields.find{ field -> field.name == name} 
-            
-            if(!prop && name.contains(".")) {
-              prefix = name[0..name.lastIndexOf('.')]     
-              name = name.substring(name.lastIndexOf('.')+1)    
-              List splitName = name.split(/\./)
-              splitName.remove(splitName.size()-1)
-              splitName.each {
-                //println "Before: ${delegateDomainOjbect}   ${it}"
-                delegateDomainOjbect = delegateDomainOjbect."${it}"
-                //println "After ${delegateDomainOjbect}"
-              }
+                // create a new solr document
+                def doc = new SolrInputDocument();
 
-              prop = clazz.declaredFields.find{ field -> field.name == name}
+                index(delegate, application, doc)
+
+                server.add(doc)
+                server.commit()
+
             }
-            
-            def typeMap = SolrUtil.typeMapping["${prop?.type}"] 
-            solrFieldName = (typeMap) ? "${prefix}${name}${typeMap}" : "${prefix}${name}"
-            
-            // check for annotations
-            if(prop?.isAnnotationPresent(Solr)) {
-              def anno = prop.getAnnotation(Solr)
-              if(anno.field())
-                solrFieldName = prop.getAnnotation(Solr).field()
-              else if(anno.asText()) 
-                solrFieldName = "${prefix}${name}_t"
-              else if(anno.ignore())
-                solrFieldName = null;                
-            } 
 
-            return solrFieldName
-          }
-        
-          dc.metaClass.'static'.searchSolr << { query ->
-            def solrService = ctx.getBean("solrService");
-            def server = solrService.getServer()
-            def solrQuery = (query instanceof org.apache.solr.client.solrj.SolrQuery) ? query : new SolrQuery( query )
-            def objType = (delegate.class.name == 'java.lang.Class') ? delegate.name : delegate.class.name
-            solrQuery.addFilterQuery("${SolrUtil.TYPE_FIELD}:${objType}")
-            //println solrQuery
-            def result = solrService.search(solrQuery)
+            // add deleteSolr method to domain classes
+            inputClazz.metaClass.deleteSolr << {->
+                def solrService = ctx.getBean("solrService");
+                def server = solrService.getServer(delegate.class)
+                server.deleteByQuery("id:${delegate.class.name}-${delegate.id}");
+                server.commit()
+            }
 
-            // GIVING UP ON THE OBJECT RESULTS FOR THE TIME BEING
-            //def objectList = []
-            //
-            //result.queryResponse.getResults().each {
-            //  def resultAsObject = SolrUtil.resultAsObject(it)
-            //  if(resultAsObject)
-            //    objectList << resultAsObject
-            //}
-            //
-            //result.objects = objectList
+            // add deleteSolr method to domain classes
+            /*
+            inputClazz.metaClass.addSolr << { ->
+              def solrService = ctx.getBean("solrService");
+              def server = solrService.getServer
 
-            return result         
-          }
-          
-        } // if enable solr search
-      } //domainClass.each      
-    } //doWithDynamicMethods
+              server.addBean( delegate );
+              server.commit()
+            }
+            */
+
+            // add solrId method to domain classes
+            inputClazz.metaClass.solrId << {->
+                def solrService = ctx.getBean("solrService");
+                SolrUtil.getSolrId(delegate)
+            }
+
+            inputClazz.metaClass.'static'.solrFieldName << {name ->
+                def delegateObject = delegate
+                def prefix = ""
+                def solrFieldName
+                def clazz = (delegate.class.name == 'java.lang.Class') ? delegate : delegate.class
+                def prop = clazz.declaredFields.find {field -> field.name == name}
+
+                if (!prop && name.contains(".")) {
+                    prefix = name[0..name.lastIndexOf('.')]
+                    name = name.substring(name.lastIndexOf('.') + 1)
+                    List splitName = name.split(/\./)
+                    splitName.remove(splitName.size() - 1)
+                    splitName.each {
+                        //println "Before: ${delegateObject}   ${it}"
+                        delegateObject = delegateObject."${it}"
+                        //println "After ${delegateObject}"
+                    }
+
+                    prop = clazz.declaredFields.find {field -> field.name == name}
+                }
+
+                def typeMap = SolrUtil.typeMapping[(prop?.type)]
+                solrFieldName = (typeMap) ? "${prefix}${name}${typeMap}" : "${prefix}${name}"
+
+                // check for annotations
+                if (prop?.isAnnotationPresent(Solr)) {
+                    def anno = prop.getAnnotation(Solr)
+                    if (anno.field())
+                        solrFieldName = prop.getAnnotation(Solr).field()
+                    else if (anno.asText())
+                        solrFieldName = "${prefix}${name}_t"
+                    else if (anno.ignore())
+                            solrFieldName = null;
+                }
+
+                return solrFieldName
+            }
+
+            inputClazz.metaClass.'static'.searchSolr << {query ->
+                def solrService = ctx.getBean("solrService");
+                def server = solrService.getServer(inputClazz)
+                def solrQuery = (query instanceof org.apache.solr.client.solrj.SolrQuery) ? query : new SolrQuery(query)
+                def objType = (delegate.class.name == 'java.lang.Class') ? delegate.name : delegate.class.name
+                solrQuery.addFilterQuery("${SolrUtil.TYPE_FIELD}:${objType}")
+                //println solrQuery
+
+                def result = solrService.search(solrQuery,server.getBaseURL())
+
+                // GIVING UP ON THE OBJECT RESULTS FOR THE TIME BEING
+                //def objectList = []
+                //
+                //result.queryResponse.getResults().each {
+                //  def resultAsObject = SolrUtil.resultAsObject(it)
+                //  if(resultAsObject)
+                //    objectList << resultAsObject
+                //}
+                //
+                //result.objects = objectList
+
+                return result
+            }
+
+        } //domainClass.each
+    }//doWithDynamicMethods
+
+    private def determineInputClasses(application) {
+        def domainClasses = []
+        application.domainClasses.each {
+            if (GrailsClassUtils.getStaticPropertyValue(it.clazz, "enableSolrSearch")) {
+                domainClasses << it.clazz
+            }
+        }
+        def additionalClasses = application.config.solr?.additional
+        return domainClasses + additionalClasses
+    }
 
     def onChange = { event ->
         // TODO Implement code that is executed when any artefact that this plugin is
@@ -233,11 +245,23 @@ open source search server through the SolrJ library.
         listeners."${typeProperty}" = expandedTypeListeners
     }
 
-  private indexDomain(application, delegateDomainOjbect, doc, depth = 1, prefix = "") {
-    def domainDesc = application.getArtefact(DomainClassArtefactHandler.TYPE, delegateDomainOjbect.class.name)
-    def clazz = (delegateDomainOjbect.class.name == 'java.lang.Class') ? delegateDomainOjbect : delegateDomainOjbect.class
-    
-    domainDesc.getProperties().each { prop ->
+  private index(indexedObject, application, doc, depth = 1, prefix = "") {
+    def domainDesc = application.getArtefact(DomainClassArtefactHandler.TYPE, indexedObject.class.name)
+
+      def clazz
+      def properties
+      if (domainDesc) {
+          properties = domainDesc.getProperties()
+          clazz = (indexedObject.class.name == 'java.lang.Class') ? indexedObject : indexedObject.class
+      } else {
+          clazz = indexedObject.class
+          properties = []
+          BeanUtils.getPropertyDescriptors(clazz).each {PropertyDescriptor desc ->
+              properties << ["name": desc.name, "type": desc.propertyType]
+          }
+      }
+
+      properties.each { prop ->
 
       //println "the type for ${it.name} is ${it.type}"
       // if the property is a closure, the type (by observation) is java.lang.Object
@@ -247,23 +271,23 @@ open source search server through the SolrJ library.
       
         // look to see if the property has a solrIndex override method
         def overrideMethodName = (prop.name?.length() > 1) ? "indexSolr${prop.name[0].toUpperCase()}${prop.name.substring(1)}" : ""
-        def overrideMethod = delegateDomainOjbect.metaClass.pickMethod(overrideMethodName)
+        def overrideMethod = indexedObject.metaClass.pickMethod(overrideMethodName.toString(),(Class []) [doc.class].toArray())
         if(overrideMethod != null) {
-          overrideMethod.invoke(delegateDomainOjbect, doc)
+          overrideMethod.invoke(indexedObject, doc)
         } 
-        else if(delegateDomainOjbect."${prop.name}" != null) {
-          def fieldName = delegateDomainOjbect.solrFieldName(prop.name);
+        else if(indexedObject."${prop.name}" != null) {
+          def fieldName = indexedObject.solrFieldName(prop.name);
           
           // fieldName may be null if the ignore annotion is used, not the best way to handle but ok for now
           if(fieldName) {
             def docKey = prefix + fieldName                
-            def docValue = delegateDomainOjbect.properties[prop.name] 
+            def docValue = indexedObject.getProperty(prop.name)
           
             // Removed because of issues with stale indexing when composed index changes
             // Recursive indexing of composition fields
             //if(GrailsClassUtils.getStaticPropertyValue(docValue.class, "enableSolrSearch") && depth < 3) {
             //  def innerDomainDesc = application.getArtefact(DomainClassArtefactHandler.TYPE, docValue.class.name)
-            //  indexDomain(application, docValue, doc, ++depth, "${docKey}.")
+            //  index(application, docValue, doc, ++depth, "${docKey}.")
             //} else {
             //  doc.addField(docKey, docValue)                  
             //}
@@ -282,7 +306,7 @@ open source search server through the SolrJ library.
             // be the default search and processed with a WordDelimiterFilter   
           
             def clazzProp = clazz.declaredFields.find{ field -> field.name == prop.name}
-            if(clazzProp && clazzProp.isAnnotationPresent(Solr) && clazzProp.getAnnotation(Solr).asTextAlso()) {
+            if(clazzProp.isAnnotationPresent(Solr) && clazzProp.getAnnotation(Solr).asTextAlso()) {
               doc.addField("${prefix}${prop.name}_t", docValue)     
             }
           }
@@ -293,16 +317,16 @@ open source search server through the SolrJ library.
     } // domainDesc.getProperties().each
 
     // add a field to the index for the field ype
-    doc.addField(prefix + SolrUtil.TYPE_FIELD, delegateDomainOjbect.class.name)
+    doc.addField(prefix + SolrUtil.TYPE_FIELD, indexedObject.class.name)
     
     // add a field for the id which will be the classname dash id
-    doc.addField("${prefix}id", "${delegateDomainOjbect.class.name}-${delegateDomainOjbect.id}")
+    doc.addField("${prefix}id", "${indexedObject.class.name}-${indexedObject.id}")
     
     if(doc.getField(SolrUtil.TITLE_FIELD) == null) {
-      def solrTitleMethod = delegateDomainOjbect.metaClass.pickMethod("solrTitle")
-      def solrTitle = (solrTitleMethod != null) ? solrTitleMethod.invoke(delegateDomainOjbect) : delegateDomainOjbect.toString()
+      def solrTitleMethod = indexedObject.metaClass.pickMethod("solrTitle")
+      def solrTitle = (solrTitleMethod != null) ? solrTitleMethod.invoke(indexedObject) : indexedObject.toString()
       doc.addField(SolrUtil.TITLE_FIELD, solrTitle)     
     }   
-  } // indexDomain
+  } // index
 
 }

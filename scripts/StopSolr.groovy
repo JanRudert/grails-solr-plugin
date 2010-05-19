@@ -24,7 +24,7 @@
 includeTool << gant.tools.Execute
 
 target (stopsolr: "Stop Solr Jetty Instance") {
-	def solrHome = "${grails.util.BuildSettingsHolder.getSettings().projectWorkDir}/solr-home"
+  def solrHome = binding.variables["solrHomeDir"] ? solrHomeDir : "${grails.util.BuildSettingsHolder.getSettings().projectWorkDir}/solr-home"
 
 	println "Stopping Solr..."
 	java ( jar:"${solrHome}/start.jar", dir: "${solrHome}", fork:true) {
