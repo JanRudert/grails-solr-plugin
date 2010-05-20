@@ -124,52 +124,10 @@ class SolrCoresIntegrationTests extends GroovyTestCase {
 
   void testCoreConfiguration() {
     Map flatten = ConfigurationHolder.config.flatten()
-    assertEquals(flatten."solr.cores.vehicle.url", vehicleCoreServer.baseURL)
+    assertEquals(flatten."solr.cores.car.url", vehicleCoreServer.baseURL)
     assertEquals(flatten."solr.cores.customer.url", customerCoreServer.baseURL)
   }
-  /*
-  void testIndexVehicleOnSave() {
-    def save = saveACar()
-    assertNotNull(save)
 
-    ModifiableSolrParams params = new ModifiableSolrParams()
-    params.add("q", "*:*")
-    QueryResponse response = vehicleCoreServer.query(params)
-
-    assertEquals(1, response.results.numFound)
-
-  }
-
-  def saveACar() {
-    def ownerShip = new VehicleOwnership().save()
-    Car vehicle = new Car()
-    vehicle.make = 'make'
-    vehicle.model = 'model'
-    vehicle.specified = true
-    vehicle.vehicleOwner = ownerShip
-    vehicle.features = new Features()
-    def savedVehicle = vehicle.save(flush: true)
-    return savedVehicle
-  }
-
-
-  void testIndexCustomerOnSave() {
-    def cus = new Customer()
-    Company company = new Company(name:"Solr AG")
-    def save = company.save()
-    assertNotNull(company.errors?.allErrors?.toString(), save)
-    cus.company = company
-    save = cus.save()
-    assertNotNull(save)
-
-    ModifiableSolrParams params = new ModifiableSolrParams()
-    params.add("q", "*:*")
-    QueryResponse response = customerCoreServer.query(params)
-
-    assertEquals(1, response.results.numFound)
-
-  }
-    */
   void testIndexAllFieldsOfExampleCarDocument() {
     ExampleCarDocument vid = new ExampleCarDocument()
     vid.id = 4711

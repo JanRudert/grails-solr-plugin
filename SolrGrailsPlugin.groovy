@@ -246,20 +246,10 @@ open source search server through the SolrJ library.
     }
 
   private index(indexedObject, application, doc, depth = 1, prefix = "") {
-    def domainDesc = application.getArtefact(DomainClassArtefactHandler.TYPE, indexedObject.class.name)
+      def domainDesc = application.getArtefact(DomainClassArtefactHandler.TYPE, indexedObject.class.name)
 
-      def clazz
-      def properties
-      if (domainDesc) {
-          properties = domainDesc.getProperties()
-          clazz = (indexedObject.class.name == 'java.lang.Class') ? indexedObject : indexedObject.class
-      } else {
-          clazz = indexedObject.class
-          properties = []
-          BeanUtils.getPropertyDescriptors(clazz).each {PropertyDescriptor desc ->
-              properties << ["name": desc.name, "type": desc.propertyType]
-          }
-      }
+      def clazz, properties
+      (clazz, properties) = determineClassAndProperties (domainDesc, indexedObject)
 
       properties.each { prop ->
 
@@ -328,5 +318,23 @@ open source search server through the SolrJ library.
       doc.addField(SolrUtil.TITLE_FIELD, solrTitle)     
     }   
   } // index
+
+   private def determineClassAndProperties(domainDesc, indexedObject) {
+      def clazz, properties
+
+      if (domainDesc) {
+          properties = domainDesc.properties
+          clazz = (indexedObject.class.name == Class.name) ? indexedObject : indexedObject.class
+      } else {
+          clazz = indexedObject.class
+          properties = []
+          BeanUtils.getPropertyDescriptors(clazz).each {PropertyDescriptor desc ->
+              properties << ["name": desc.name, "type": desc.propertyType]
+          }
+      }
+
+      [clazz, properties]
+
+  }
 
 }

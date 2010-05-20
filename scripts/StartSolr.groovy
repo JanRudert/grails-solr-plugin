@@ -36,8 +36,10 @@ target ( startsolr: "Start Solr Jetty Instance") {
     depends("stopsolr")
     depends("init")
 
-    File solrXml = fetchAndOverrideSolrXml(solrHome)
-    def cores = ensuresCoresIfConfigured(solrXml, solrHome)
+    ensureLogDir()
+
+    File solrXml = fetchAndOverrideSolrXml()
+    def cores = ensuresCoresIfConfigured(solrXml)
 
     if (!cores) {
       // overlay the schema.xml config file in the apps grails-app/conf/solr directory (and other conf files)
@@ -69,7 +71,14 @@ target ( startsolr: "Start Solr Jetty Instance") {
 		println "-----------"
 }
 
-private File fetchAndOverrideSolrXml(solrHome) {
+private def ensureLogDir() {
+  File logDir = new File("${solrHome}/logs/")
+  if (!logDir.exists()) {
+    logDir.mkdir()
+  }
+}
+
+private File fetchAndOverrideSolrXml() {
   File solrXmlSource = new File("${basedir}/grails-app/conf/solr/solr.xml")
   File solrXmlTarget = new File("${solrHome}/solr.xml")
   if (solrXmlSource?.exists()) {
@@ -82,7 +91,7 @@ private File fetchAndOverrideSolrXml(solrHome) {
   return solrXmlTarget
 }
 
-private def ensuresCoresIfConfigured(File solrXml, solrHome) {
+private def ensuresCoresIfConfigured(File solrXml) {
   def cores = []
 
   if (solrXml.exists()) {
