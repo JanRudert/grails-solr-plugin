@@ -25,10 +25,11 @@ includeTool << gant.tools.Execute
 
 target (stopsolr: "Stop Solr Jetty Instance") {
   def solrHome = binding.variables["solrHomeDir"] ? solrHomeDir : "${grails.util.BuildSettingsHolder.getSettings().projectWorkDir}/solr-home"
+  def solrStopPort = binding.variables["solrStopPort"] ? solrStopPort : "8079"
 
 	println "Stopping Solr..."
 	java ( jar:"${solrHome}/start.jar", dir: "${solrHome}", fork:true) {
-    jvmarg(value:"-DSTOP.PORT=8079")
+        jvmarg(value:"-DSTOP.PORT=$solrStopPort")
 		jvmarg(value:"-DSTOP.KEY=secret")
 		arg(value: "--stop")
 	}			
