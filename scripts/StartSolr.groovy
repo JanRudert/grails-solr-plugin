@@ -28,8 +28,9 @@ grailsHome = ant.antProject.properties.'env.GRAILS_HOME'
 
 def pluginBasedir = "${solrPluginDir}"
 def solrHome = binding.variables["solrHomeDir"] ? solrHomeDir : "${grails.util.BuildSettingsHolder.getSettings().projectWorkDir}/solr-home"
-def solrStopPort = "8079"
-def solrPort = "8983"
+def solrStopPort = binding.variables["solrStopPort"] ? solrStopPort : "8079"
+def solrPort = binding.variables["solrPort"] ? solrPort : "8983"
+def solrConfigSourceDir = binding.variables["solrConfigSourceDir"] ? solrConfigSourceDir : "${grails.util.BuildSettingsHolder.getSettings().baseDir.absolutePath}/grails-app/conf/solr" 
 def solrHost = "localhost"
 
 target ( startsolr: "Start Solr Jetty Instance") {
@@ -38,13 +39,13 @@ target ( startsolr: "Start Solr Jetty Instance") {
 
     ensureLogDir(solrHome)
 
-    File solrXml = fetchAndOverrideSolrXml(solrHome)
-    def cores = ensuresCoresIfConfigured(solrXml, solrHome)
+    File solrXml = fetchAndOverrideSolrXml(solrConfigSourceDir,solrHome)
+    def cores = ensuresCoresIfConfigured(solrXml, solrHome, solrConfigSourceDir)
 
     if (!cores) {
       // overlay the schema.xml config file in the apps grails-app/conf/solr directory (and other conf files)
-      ant.copy(todir: "${solrHome}/conf", failonerror: false) {
-        fileset(dir: "${basedir}/grails-app/conf/solr/plain")
+      ant.copy(todir: "${solrHome}/solr/conf", failonerror: false) {
+        fileset(dir: "$solrConfigSourceDir/plain")
       }
     }
 
@@ -54,8 +55,9 @@ target ( startsolr: "Start Solr Jetty Instance") {
 
 		// start it up
 		ant.java ( jar:"${solrHome}/start.jar", dir: "${solrHome}", fork:true, spawn:true) {
-            jvmarg(value:"-Dsolr.solr.home=${solrHome}")
-			jvmarg(value:"-DSTOP.PORT=${solrStopPort}")
+            jvmarg(value:"-Dsolr.solr.home=$solrHome")
+            jvmarg(value:"-Djetty.port=$solrPort")
+			jvmarg(value:"-DSTOP.PORT=$solrStopPort")
 			jvmarg(value:"-DSTOP.KEY=secret")
 			arg(line:"etc/jetty-logging.xml etc/jetty.xml")
 		}
@@ -78,8 +80,8 @@ private def ensureLogDir(solrHome) {
   }
 }
 
-private File fetchAndOverrideSolrXml(solrHome) {
-  File solrXmlSource = new File("${basedir}/grails-app/conf/solr/solr.xml")
+private File fetchAndOverrideSolrXml(solrConfigSourceDir, solrHome) {
+  File solrXmlSource = new File("${solrConfigSourceDir}/solr.xml")
   File solrXmlTarget = new File("${solrHome}/solr.xml")
   if (solrXmlSource?.exists()) {
     ant.copy(file: solrXmlSource.absolutePath, toFile: solrXmlTarget.absolutePath, failonerror: false)
@@ -91,7 +93,7 @@ private File fetchAndOverrideSolrXml(solrHome) {
   return solrXmlTarget
 }
 
-private def ensuresCoresIfConfigured(File solrXml, solrHome) {
+private def ensuresCoresIfConfigured(File solrXml, solrHome, solrConfigSourceDir) {
   def cores = []
 
   if (solrXml.exists()) {
@@ -103,7 +105,7 @@ private def ensuresCoresIfConfigured(File solrXml, solrHome) {
         ensureCoreDirectory(coreDir)
 
         String coreName = it.attribute('name')
-        ensureCoreConfiguration(coreDir, coreName)
+        ensureCoreConfiguration(solrConfigSourceDir, coreDir, coreName)
         cores << coreName
       }
     }
@@ -111,9 +113,9 @@ private def ensuresCoresIfConfigured(File solrXml, solrHome) {
   return cores
 }
 
-private def ensureCoreConfiguration(String coreDir, String coreName) {
+private def ensureCoreConfiguration(String solrConfigSourceDir, String coreDir, String coreName) {
   ant.copy(todir: "$coreDir/conf", failonerror: false) {
-    fileset(dir: "${basedir}/grails-app/conf/solr/multicore/$coreName")
+    fileset(dir: "$solrConfigSourceDir/multicore/$coreName")
   }
 }
 
