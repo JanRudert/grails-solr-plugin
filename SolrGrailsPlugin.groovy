@@ -49,8 +49,8 @@ class SolrGrailsPlugin {
     def pluginExcludes = [
       "grails-app/views/error.gsp",
       "grails-app/domain/**",
+      "grails-app/conf/spring/resources.groovy",
       "grails-app/conf/Config.groovy",
-      "grails-app/conf/solr/**",
       "grials-app/UrlMappings.groovy",
       "grails-app/Datasource.groovy",
       "src/groovy/org/grails/solr/test/**"
@@ -191,7 +191,7 @@ open source search server through the SolrJ library.
                 solrQuery.addFilterQuery("${SolrUtil.TYPE_FIELD}:${objType}")
                 //println solrQuery
 
-                def result = solrService.search(solrQuery,server.getBaseURL())
+                def result = solrService.search(solrQuery,server)
 
                 // GIVING UP ON THE OBJECT RESULTS FOR THE TIME BEING
                 //def objectList = []
@@ -218,7 +218,7 @@ open source search server through the SolrJ library.
             }
         }
         def additionalClasses = application.config.solr?.additional
-        return domainClasses + additionalClasses
+        return additionalClasses ? domainClasses + additionalClasses : domainClasses
     }
 
     def onChange = { event ->

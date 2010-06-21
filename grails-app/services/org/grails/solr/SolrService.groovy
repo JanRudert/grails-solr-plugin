@@ -34,6 +34,7 @@ class SolrService {
 
   boolean transactional = false
   def grailsApplication
+  private def cores
 
   /**
   * Return a SolrServer
@@ -94,13 +95,23 @@ class SolrService {
     }
    *
    */
-  String getCoreUrl(Class artefactType) {
-    def url
-    def coreConfigs = ConfigurationHolder.config.solr.cores
-    if (coreConfigs) {
-      url = coreConfigs.find {key, configObject -> configObject["artefact"] == artefactType}?.value?.url
+   String getCoreUrl(Class artefact) {
+    return cores.find {core -> core.artefact == artefact}?.url
+  }
+
+  def getCores() {
+    def rtn
+    if (cores == null) {
+      def coreConfigs = ConfigurationHolder.config.solr.cores
+      if (coreConfigs) {
+        cores = coreConfigs.collect {key, configObject ->
+          new SolrCore(name: key, artefact: configObject.artefact, url: configObject.url)
+        }
+      } else {
+        cores = [] //avoids parsing empty config on each call 
+      }
     }
-    return url
+    return cores
   }
 
   /**
@@ -130,28 +141,39 @@ class SolrService {
   /**
   * Executes a Solr query given a string formatted query and an url.
   */
-  def search(String query, String url)
-  {
+  def search(String query, String url) {
     search( new SolrQuery( query), url)
   }
 
-   /**
-  * Given SolrQuery object, execute Solr query.
-  * @author Manuel Kasiske
-  * @param solrQuery - SolrQuery object representating the query {@link http://lucene.apache.org/solr/api/org/apache/solr/client/solrj/SolrQuery.html}
-  * @return Map with 'resultList' - list of Maps representing results and 'queryResponse' - Solrj query result
-  */
+  /**
+   * Given SolrQuery object and server url, execute Solr query.
+   *
+   * @param solrQuery - SolrQuery object representating the query  {@link http://lucene.apache.org/solr/api/org/apache/solr/client/solrj/SolrQuery.html}
+   * @param url
+   * @return SearchResult
+   */
   def search(SolrQuery solrQuery, String url) {
-    QueryResponse rsp = getServer(url).query( solrQuery );
-    def results = collectResults(rsp)
-    return new SearchResults(resultList: results, queryResponse: rsp);
+    def server = getServer(url)
+    return search(solrQuery, server);
   }
 
- /**
-  * Given SolrQuery object, execute Solr query
+  /**
+   * Given SolrQuery object and server, execute Solr query.
+   * @param solrQuery
+   * @param server
+   * @return SearchResult
+   */
+  def search(SolrQuery solrQuery, server) {
+    QueryResponse rsp = server.query(solrQuery);
+    def results = collectResults(rsp)
+    return new SearchResults(resultList: results, queryResponse: rsp)
+  }
+
+  /**
+  * Given SolrQuery object, execute Solr query on default server url
   *
   * @param solrQuery - SolrQuery object representating the query {@link http://lucene.apache.org/solr/api/org/apache/solr/client/solrj/SolrQuery.html}
-  * @return Map with 'resultList' - list of Maps representing results and 'queryResponse' - Solrj query result
+  * @return SearchResult
   */
   def search(SolrQuery solrQuery) {
     QueryResponse rsp = getServer().query( solrQuery );
@@ -165,8 +187,8 @@ class SolrService {
    * @param QueryRepsponse: the response of the solr-query.
    */
   def collectResults(org.apache.solr.client.solrj.response.QueryResponse rsp) {
-     def results = []
-     rsp.getResults().each { doc ->
+     def rtn = []
+     rsp.results.each { doc ->
       def map = [:]
       doc.getFieldNames().each { it ->
 
@@ -184,9 +206,9 @@ class SolrService {
       // http://lucene.apache.org/solr/api/org/apache/solr/common/SolrDocument.html
       map.solrDocument = doc
 
-      results << map
+      rtn << map
     }
-    results
+    rtn
   }
 
 
