@@ -8,7 +8,10 @@ log4j = {
     trace 'org.grails.solr'
 }
 
-solr {
+environments {
+  test {
+
+    solr {
     url = "http://localhost:8983/solr"
 
   //non-domain classes to be enhanced for solr search
@@ -18,11 +21,14 @@ solr {
   cores {
     car {
       artefact = ExampleCarDocument
-      url = "http://localhost:8983/solr/car"
+      url = "http://localhost:8984/solr/car"
     }
     customer {
       artefact = ExampleCustomerDocument
-      url = "http://localhost:8983/solr/customer"
+      url = "http://localhost:8984/solr/customer"
     }
+  }
+}
+
   }
 }

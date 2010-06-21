@@ -9,6 +9,7 @@ import org.codehaus.groovy.grails.commons.ConfigurationHolder
 import org.grails.solr.SolrService
 import org.grails.solr.test.ExampleCarDocument
 import org.grails.solr.test.ExampleCustomerDocument
+import org.grails.solr.SolrRunner
 
 /**
  * @author: rudi
@@ -16,6 +17,7 @@ import org.grails.solr.test.ExampleCustomerDocument
  */
 class SolrCoresIntegrationTests extends GroovyTestCase {
 
+  SolrRunner solrRunner
   SolrService solrService
 
   private static int numberOfExecutedTests = 0
@@ -28,28 +30,15 @@ class SolrCoresIntegrationTests extends GroovyTestCase {
 
   private def ensureRunningSolr() {
     if (numberOfExecutedTests == 0) {
-      startSolrServer()
-      waitForSolrStarted()
+      solrRunner.startSolr()
     }
   }
 
+  protected void mockConfig(String config) {
+        def c = new ConfigSlurper().parse(config)
+        ConfigurationHolder.config = c
+    }
 
-  private def startSolrServer() {
-
-    GantBinding binding = new GantBinding()
-    binding.setVariable("solrPluginDir", baseDir)
-    binding.setVariable("solrHomeDir", "${grails.util.BuildSettingsHolder.getSettings().projectTargetDir}/solr-home")
-
-    Gant gant = new Gant(binding)
-    gant.loadScript(new File("$baseDir/scripts/StartSolr.groovy"))
-    gant.processTargets()
-
-  }
-
-  private File getBaseDir() {
-    def baseDir = grails.util.BuildSettingsHolder.getSettings().baseDir
-    return baseDir
-  }
 
   private def waitForSolrStarted() {
     long start = System.currentTimeMillis()
@@ -95,22 +84,12 @@ class SolrCoresIntegrationTests extends GroovyTestCase {
 
   private def stopSolrIfLastTest() {
     if (++numberOfExecutedTests == numberOfTestMethods) {
-      stopSolrServer()
+        solrRunner.stopSolr()
     }
   }
 
   private static int getNumberOfTestMethods() {
     return SolrCoresIntegrationTests.metaClass.methods*.name.findAll {it.startsWith("test")}.size()
-  }
-
-  private def stopSolrServer() {
-    GantBinding binding = new GantBinding()
-    binding.setVariable("solrHomeDir", "${grails.util.BuildSettingsHolder.getSettings().projectTargetDir}/solr-home")
-
-    Gant gant = new Gant(binding)
-    gant.loadScript(new File("$baseDir/scripts/StopSolr.groovy"))
-    gant.processTargets()
-
   }
 
   def getCustomerCoreServer() {
@@ -227,11 +206,11 @@ VEB Anlassergombinad Winderschreg
     cid.customerType = "Subject"
 
     cid.indexSolr()
-    
+
     ModifiableSolrParams params = new ModifiableSolrParams()
     params.add("q", "*:*")
     QueryResponse response = customerCoreServer.query(params)
-    
+
     assertEquals(1, response.results.numFound)
     SolrDocument doc = response.results[0]
     assertEquals("$ExampleCustomerDocument.name-$cid.id", doc.getFieldValue("id"))
