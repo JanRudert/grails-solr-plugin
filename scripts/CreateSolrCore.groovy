@@ -10,7 +10,9 @@ target(main: "Creates a new Solr core") {
   if (coreName) {
     File solrXml = ensureSolrXml()
     insertCoreIfNotExists(solrXml, coreName)
-    createConfigFolderIfNotExists(coreName)
+    File coreConfigDir = createConfigFolderIfNotExists(coreName)
+    setDataDirInSolrConfigXML(coreConfigDir, coreName)
+
   } else {
     println("Usage 'grails create-solr-core <coreName>'")
   }
@@ -59,6 +61,20 @@ private def createConfigFolderIfNotExists(coreName) {
       fileset(dir: "${basedir}/grails-app/conf/solr/plain")
     }
   }
+  return coreDirSource
 }
+
+private def setDataDirInSolrConfigXML(File coreConfigDir, coreName) {
+  File solrConfigXML = new File(coreConfigDir, "solrconfig.xml")
+  Node config = new XmlParser().parse(solrConfigXML)
+  Node dataDir = config.dataDir[0]
+  dataDir.setValue("\${solr.data.dir:./solr/data/multicore/$coreName}")
+  solrConfigXML.withPrintWriter {writer ->
+    XmlNodePrinter printer = new XmlNodePrinter(writer)
+    printer.setPreserveWhitespace(true)
+    printer.print(config)
+  }
+}
+
 
 setDefaultTarget(main)
